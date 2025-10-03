@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>noScribe Web - Transcription Audio AI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+
+        .sidebar {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            height: fit-content;
+        }
+
+        .content-area {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .section {
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .form-group input[type="file"] {
+            padding: 6px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: #2980b9;
+        }
+
+        .btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .btn-cancel {
+            background: #e74c3c;
+            margin-top: 8px;
+        }
+
+        .btn-cancel:hover {
+            background: #c0392b;
+        }
+
+        .file-display {
+            background: #ecf0f1;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            color: #555;
+            word-break: break-all;
+        }
+
+        .progress-section {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .progress-section.active {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #ecf0f1;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #3498db;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .status-message {
+            font-size: 14px;
+            color: #555;
+            padding: 12px;
+            background: #ecf0f1;
+            border-radius: 4px;
+            margin-bottom: 12px;
+        }
+
+        .log-area {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+
+        .log-area .log-entry {
+            margin-bottom: 4px;
+        }
+
+        .log-area .log-info {
+            color: #3498db;
+        }
+
+        .log-area .log-success {
+            color: #2ecc71;
+        }
+
+        .log-area .log-error {
+            color: #e74c3c;
+        }
+
+        .result-area {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .result-area.active {
+            display: block;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .result-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .btn-download {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-download:hover {
+            background: #229954;
+        }
+
+        .result-text {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 14px;
+            line-height: 1.6;
+            border: 1px solid #e0e0e0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #3498db;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+
+        .server-status {
+            background: #d5f4e6;
+            color: #0f5132;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            border: 1px solid #badbcc;
+        }
+
+        .server-status.error {
+            background: #f8d7da;
+            color: #842029;
+            border-color: #f5c2c7;
+        }
+
+        .checkbox-group {
+            margin-bottom: 12px;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 8px;
+            width: auto;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .radio-group input[type="radio"] {
+            margin-right: 8px;
+            width: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>noScribe</h1>
+            <p>Transcription audio automatique avec IA - Optimisé pour 72 cœurs CPU</p>
+        </div>
+
+        <div class="server-status" id="serverStatus">
+            Vérification du serveur...
+        </div>
+
+        <div class="main-content">
+            <!-- Sidebar avec les paramètres -->
+            <div class="sidebar">
+                <div class="section">
+                    <div class="section-title">Fichier Audio</div>
+                    <div class="form-group">
+                        <label for="audioFile">Sélectionnez un fichier</label>
+                        <input type="file" id="audioFile" accept="audio/*,video/*">
+                    </div>
+                    <div id="fileDisplay" class="file-display" style="display: none;"></div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Format de sortie</div>
+                    <div class="form-group">
+                        <label for="outputFile">Nom du fichier</label>
+                        <input type="text" id="outputFile" placeholder="transcription" value="transcription">
+                    </div>
+                    <div class="form-group">
+                        <select id="outputFormat">
+                            <option value="html">HTML (*.html)</option>
+                            <option value="vtt">Sous-titres (*.vtt)</option>
+                            <option value="txt">Texte brut (*.txt)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Plage de temps</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="startTime">Début (HH:MM:SS)</label>
+                            <input type="text" id="startTime" placeholder="00:00:00" value="00:00:00">
+                        </div>
+                        <div class="form-group">
+                            <label for="stopTime">Fin (HH:MM:SS)</label>
+                            <input type="text" id="stopTime" placeholder="Jusqu'à la fin">
+                        </div>
+                    </div>
+                    <div class="help-text">Laissez la fin vide pour transcrire jusqu'à la fin</div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Langue</div>
+                    <div class="form-group">
+                        <select id="language">
+                            <option value="auto">Détection automatique</option>
+                            <option value="fr" selected>Français</option>
+                            <option value="en">Anglais</option>
+                            <option value="de">Allemand</option>
+                            <option value="es">Espagnol</option>
+                            <option value="it">Italien</option>
+                            <option value="pt">Portugais</option>
+                            <option value="nl">Néerlandais</option>
+                            <option value="pl">Polonais</option>
+                            <option value="multilingual">Multilingue (expérimental)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Qualité</div>
+                    <div class="form-group">
+                        <select id="quality">
+                            <option value="precise" selected>Précis (recommandé)</option>
+                            <option value="fast">Rapide</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Marquer les pauses</div>
+                    <div class="form-group">
+                        <select id="markPause">
+                            <option value="none">Aucune</option>
+                            <option value="1sec+">1 seconde et plus</option>
+                            <option value="2sec+" selected>2 secondes et plus</option>
+                            <option value="3sec+">3 secondes et plus</option>
+                        </select>
+                    </div>
+                    <div class="help-text">Les pauses sont marquées comme (.) ou (XX secondes pause)</div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Détection des locuteurs</div>
+                    <div class="form-group">
+                        <select id="speakerDetection">
+                            <option value="none" selected>Aucune</option>
+                            <option value="auto">Automatique</option>
+                            <option value="2">2 locuteurs</option>
+                            <option value="3">3 locuteurs</option>
+                            <option value="4">4 locuteurs</option>
+                            <option value="5">5 locuteurs</option>
+                            <option value="6">6 locuteurs</option>
+                        </select>
+                    </div>
+                    <div class="help-text">Identifie les différents locuteurs dans l'audio</div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Options supplémentaires</div>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="overlappingSpeech">
+                            Parole simultanée
+                        </label>
+                    </div>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="disfluencies" checked>
+                            Disfluences (euh, hum...)
+                        </label>
+                    </div>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="timestamps">
+                            Timestamps
+                        </label>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Performance</div>
+                    <div class="form-group">
+                        <label for="segmentDuration">Durée des segments (sec)</label>
+                        <input type="number" id="segmentDuration" value="60" min="60" step="30">
+                    </div>
+                    <div class="help-text">Segments de 60s recommandés pour le traitement parallèle</div>
+                </div>
+
+                <button class="btn" id="startBtn" disabled>Démarrer la transcription</button>
+                <button class="btn btn-cancel" id="cancelBtn" style="display: none;">Annuler</button>
+            </div>
+
+            <!-- Zone de contenu principale -->
+            <div class="content-area">
+                <div class="section">
+                    <div class="section-title">Journal</div>
+                    <div class="log-area" id="logArea">
+                        <div class="log-entry log-info">En attente du fichier audio...</div>
+                    </div>
+                </div>
+
+                <div class="progress-section" id="progressSection">
+                    <div class="section-title">Progression</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="status-message" id="statusMessage">Initialisation...</div>
+                </div>
+
+                <div class="result-area" id="resultArea">
+                    <div class="result-header">
+    <h3>Résultat de la transcription</h3>
+    <div style="display: flex; gap: 10px;">
+        <select id="ollamaModel" style="padding: 8px; border-radius: 4px; border: 1px solid #ddd;">
+            <option value="llama3.2:3b">Llama 3.2 3B (rapide)</option>
+            <option value="mistral-nemo:latest">Mistral Nemo 12B</option>
+            <option value="llama3.3:70b">Llama 3.3 70B (précis)</option>
+            <option value="gemma3:12b">Gemma 3 12B</option>
+        </select>
+        <button class="btn-download" id="generateSummaryBtn" style="background: #3498db;">Compte rendu</button>
+        <button class="btn-download" id="downloadBtn">Télécharger</button>
+    </div>
+                    </div>  
+                    <div class="result-text" id="resultText"></div>
+
+                        <div id="summaryArea" style="display: none; margin-top: 20px;">
+                        <div class="result-header">
+        <h3>Compte rendu</h3>
+        <button class="btn-download" id="downloadSummaryBtn">Télécharger CR</button>
+                            </div>
+                            <div class="result-text" id="summaryText"></div>
+                        </div>
+
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="segmentCount">-</div>
+                            <div class="stat-label">Segments traités</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="workerCount">-</div>
+                            <div class="stat-label">Cœurs utilisés</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="wordCount">-</div>
+                            <div class="stat-label">Mots transcrits</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        let selectedFile = null;
+        let currentFileId = null;
+        let isProcessing = false;
+
+        // Éléments DOM
+        const audioFile = document.getElementById('audioFile');
+        const fileDisplay = document.getElementById('fileDisplay');
+        const startBtn = document.getElementById('startBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const logArea = document.getElementById('logArea');
+        const progressSection = document.getElementById('progressSection');
+        const progressFill = document.getElementById('progressFill');
+        const statusMessage = document.getElementById('statusMessage');
+        const resultArea = document.getElementById('resultArea');
+        const serverStatus = document.getElementById('serverStatus');
+
+        // Vérifier l'état du serveur
+        async function checkServerHealth() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                const data = await response.json();
+                
+                serverStatus.className = 'server-status';
+                serverStatus.innerHTML = `✓ Serveur connecté - ${data.available_cores} cœurs disponibles (${data.configured_workers} configurés) - ${data.device}`;
+                
+                return true;
+            } catch (error) {
+                serverStatus.className = 'server-status error';
+                serverStatus.innerHTML = '✗ Serveur déconnecté - Vérifiez que le backend Flask est démarré';
+                return false;
+            }
+        }
+
+        // Ajouter une entrée au journal
+        function addLog(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        // Gestion de la sélection de fichier
+        audioFile.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                selectedFile = e.target.files[0];
+                fileDisplay.style.display = 'block';
+                fileDisplay.textContent = `Fichier sélectionné: ${selectedFile.name} (${formatFileSize(selectedFile.size)})`;
+                startBtn.disabled = false;
+                addLog(`Fichier chargé: ${selectedFile.name}`, 'success');
+                
+                // Suggérer un nom de fichier de sortie
+                const outputName = selectedFile.name.replace(/\.[^/.]+$/, "");
+                document.getElementById('outputFile').value = outputName;
+            }
+        });
+
+        // Formater la taille de fichier
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        }
+
+        // Démarrer la transcription
+        startBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            isProcessing = true;
+            startBtn.disabled = true;
+            cancelBtn.style.display = 'block';
+            progressSection.classList.add('active');
+            resultArea.classList.remove('active');
+
+            addLog('Démarrage de la transcription...', 'info');
+
+            // Collecter les options
+            const options = {
+                language: document.getElementById('language').value,
+                quality: document.getElementById('quality').value,
+                output_format: document.getElementById('outputFormat').value,
+                start_time: document.getElementById('startTime').value,
+                stop_time: document.getElementById('stopTime').value,
+                mark_pause: document.getElementById('markPause').value,
+                speaker_detection: document.getElementById('speakerDetection').value,
+                overlapping_speech: document.getElementById('overlappingSpeech').checked,
+                disfluencies: document.getElementById('disfluencies').checked,
+                timestamps: document.getElementById('timestamps').checked,
+                segment_duration: parseInt(document.getElementById('segmentDuration').value) * 1000
+            };
+
+            // Préparer le FormData
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('options', JSON.stringify(options));
+
+            try {
+                // Mise à jour de la progression
+                updateProgress(10, 'Envoi du fichier...');
+                addLog('Envoi du fichier au serveur...', 'info');
+
+                const response = await fetch(`${API_URL}/transcribe`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Erreur lors de la transcription');
+                }
+
+                updateProgress(30, 'Découpage de l\'audio en segments...');
+                addLog('Découpage de l\'audio en segments...', 'info');
+
+                // Simuler la progression pendant le traitement
+                let progress = 30;
+                const progressInterval = setInterval(() => {
+                    if (progress < 90) {
+                        progress += 5;
+                        updateProgress(progress, `Transcription en cours sur ${options.segment_duration / 1000}s segments...`);
+                    }
+                }, 2000);
+
+                const data = await response.json();
+                clearInterval(progressInterval);
+
+                updateProgress(100, 'Transcription terminée !');
+                addLog('Transcription terminée avec succès !', 'success');
+                addLog(`${data.result.num_segments} segments traités avec ${data.result.num_workers} cœurs`, 'info');
+
+                currentFileId = data.file_id;
+
+                // Afficher les résultats
+                displayResults(data.result);
+
+            } catch (error) {
+                console.error('Erreur:', error);
+                addLog(`ERREUR: ${error.message}`, 'error');
+                updateProgress(0, 'Erreur de transcription');
+            } finally {
+                isProcessing = false;
+                startBtn.disabled = false;
+                cancelBtn.style.display = 'none';
+            }
+        });
+
+        // Mise à jour de la barre de progression
+        function updateProgress(percent, message) {
+            progressFill.style.width = `${percent}%`;
+            statusMessage.textContent = message;
+        }
+
+        // Afficher les résultats
+        function displayResults(result) {
+            resultArea.classList.add('active');
+            
+            document.getElementById('resultText').textContent = result.full_text;
+            document.getElementById('segmentCount').textContent = result.num_segments;
+            document.getElementById('workerCount').textContent = result.num_workers;
+            
+            const wordCount = result.full_text.split(/\s+/).filter(w => w.length > 0).length;
+            document.getElementById('wordCount').textContent = wordCount;
+        }
+
+        // Télécharger le résultat
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            if (currentFileId) {
+                const outputFormat = document.getElementById('outputFormat').value;
+                const fileName = document.getElementById('outputFile').value || 'transcription';
+                
+                addLog(`Téléchargement de ${fileName}.${outputFormat}...`, 'info');
+                window.open(`${API_URL}/download/${currentFileId}`, '_blank');
+            }
+        });
+
+        // Bouton annuler
+        cancelBtn.addEventListener('click', () => {
+            if (isProcessing) {
+                addLog('Annulation de la transcription...', 'info');
+                // TODO: Implémenter l'annulation côté serveur
+                isProcessing = false;
+                startBtn.disabled = false;
+                cancelBtn.style.display = 'none';
+                progressSection.classList.remove('active');
+            }
+        });
+
+        // Validation du format de temps
+        function validateTimeFormat(input) {
+            const pattern = /^([0-9]{2}):([0-9]{2}):([0-9]{2})$/;
+            return pattern.test(input.value) || input.value === '';
+        }
+
+        document.getElementById('startTime').addEventListener('blur', function() {
+            if (this.value && !validateTimeFormat(this)) {
+                addLog('Format de temps invalide. Utilisez HH:MM:SS', 'error');
+                this.value = '00:00:00';
+            }
+        });
+
+        document.getElementById('stopTime').addEventListener('blur', function() {
+            if (this.value && !validateTimeFormat(this)) {
+                addLog('Format de temps invalide. Utilisez HH:MM:SS', 'error');
+                this.value = '';
+            }
+        });
+
+        // Générer un compte rendu
+        document.getElementById('generateSummaryBtn').addEventListener('click', async () => {
+    if (!currentFileId) return;
+    
+    const model = document.getElementById('ollamaModel').value;
+    const btn = document.getElementById('generateSummaryBtn');
+    btn.disabled = true;
+    btn.textContent = 'Génération...';
+    
+    addLog(`Génération du compte rendu avec ${model}...`, 'info');
+    
+    try {
+        const response = await fetch(`${API_URL}/generate-summary`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                file_id: currentFileId,
+                model: model
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('summaryArea').style.display = 'block';
+            document.getElementById('summaryText').textContent = data.summary;
+            addLog('Compte rendu généré avec succès !', 'success');
+        } else {
+            addLog(`Erreur: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        addLog(`Erreur: ${error.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Compte rendu';
+    }
+});
+
+        // Télécharger le compte rendu
+        document.getElementById('downloadSummaryBtn').addEventListener('click', () => {
+    if (currentFileId) {
+        window.open(`${API_URL}/download-summary/${currentFileId}`, '_blank');
+    }
+});
+
+        // Initialisation
+        checkServerHealth();
+        
+        // Vérifier périodiquement l'état du serveur
+        setInterval(checkServerHealth, 30000); // Toutes les 30 secondes
+    </script>
+</body>
+</html>
