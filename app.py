@@ -160,68 +160,64 @@ def transcribe_segment(args):
         }
 
 def detect_speakers(audio_path, num_speakers=None):
-    """Détection des locuteurs avec pyannote - modèles locaux"""
+    """Détection des locuteurs avec Picovoice Falcon"""
     try:
-        import torch
-        from pyannote.audio import Model
-        from pyannote.audio.pipelines import SpeakerDiarization
+        import pvfalcon
+        import time
         
-        logging.info("Chargement des modèles pyannote locaux...")
+        start_time = time.time()
+        logging.info("=== DÉTECTION LOCUTEURS AVEC PICOVOICE FALCON ===")
         
-        # Chemins vers vos modèles locaux
-        segmentation_model_path = Path.home() / "noscribe-web/models/pyannote/pyannote_model_segmentation-3.0.bin"
-        embedding_model_path = Path.home() / "noscribe-web/models/pyannote/pyannote_model_wespeaker-voxceleb-resnet34-LM.bin"
+        # Récupérer la clé API
+        api_key_file = CONFIG_FOLDER / 'picovoice_key.txt'
+        if not api_key_file.exists():
+            logging.error("Clé API Picovoice non trouvée")
+            logging.error("Créez le fichier: ~/.noscribe-web/picovoice_key.txt")
+            return []
         
-        # Charger les modèles
-        segmentation_model = Model.from_pretrained(str(segmentation_model_path))
-        embedding_model = Model.from_pretrained(str(embedding_model_path))
+        with open(api_key_file, 'r') as f:
+            access_key = f.read().strip()
         
-        # Créer le pipeline manuellement avec les modèles locaux
-        pipeline = SpeakerDiarization(
-            segmentation=segmentation_model,
-            embedding=embedding_model,
-            clustering="AgglomerativeClustering"
-        )
+        # Créer l'instance Falcon
+        falcon = pvfalcon.create(access_key=access_key)
         
-        # Forcer CPU
-        pipeline.to(torch.device("cpu"))
+        logging.info("Préparation de l'audio...")
         
-        logging.info(f"Préparation de l'audio pour la diarisation...")
-        
-        # Convertir l'audio en WAV mono 16kHz
+        # Convertir en WAV mono 16kHz (requis par Falcon)
         audio = AudioSegment.from_file(audio_path)
-        audio = audio.set_channels(1)
-        audio = audio.set_frame_rate(16000)
+        duration_min = len(audio) / 1000 / 60
+        logging.info(f"Durée audio: {duration_min:.1f} minutes")
         
-        temp_audio_path = UPLOAD_FOLDER / f"temp_diarization_{uuid.uuid4()}.wav"
+        audio = audio.set_channels(1).set_frame_rate(16000)
+        
+        temp_audio_path = UPLOAD_FOLDER / f"temp_falcon_{uuid.uuid4()}.wav"
         audio.export(temp_audio_path, format="wav")
         
-        logging.info(f"Analyse du fichier audio pour détecter les locuteurs...")
+        logging.info("Lancement de la diarisation Falcon...")
         
-        # Exécuter la diarisation
-        if num_speakers:
-            diarization = pipeline({"audio": str(temp_audio_path)}, num_speakers=num_speakers)
-        else:
-            diarization = pipeline({"audio": str(temp_audio_path)})
+        # Processus de diarisation avec Falcon
+        segments = falcon.process_file(str(temp_audio_path))
         
+        logging.info(f"Diarisation terminée en {time.time() - start_time:.1f}s")
+        
+        # Convertir le format Falcon en notre format
         speaker_segments = []
-        
-        # Itérer sur les résultats (format Annotation de pyannote)
-        for segment, _, label in diarization.itertracks(yield_label=True):
+        for segment in segments:
             speaker_segments.append({
-                'start': segment.start,
-                'end': segment.end,
-                'speaker': label
+                'start': segment.start_sec,
+                'end': segment.end_sec,
+                'speaker': f"SPEAKER_{segment.speaker_tag:02d}"
             })
         
         # Nettoyer
+        falcon.delete()
         os.remove(temp_audio_path)
         
-        logging.info(f"Détection terminée: {len(speaker_segments)} segments trouvés")
+        logging.info(f"=== {len(speaker_segments)} segments détectés ===")
         return speaker_segments
         
     except Exception as e:
-        logging.error(f"Erreur détection locuteurs: {str(e)}")
+        logging.error(f"Erreur Falcon: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
         return []
