@@ -176,7 +176,7 @@ def detect_speakers(audio_path, num_speakers=None):
         # Charger le pipeline officiel depuis Hugging Face
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hf_token
+            token=hf_token
         )
         
         # Forcer CPU si pas de GPU disponible ou pour la cohérence
