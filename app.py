@@ -184,25 +184,32 @@ def detect_speakers(audio_path, num_speakers=None):
         
         logging.info("Préparation de l'audio pour la diarisation...")
         
-        # pyannote s'attend à un chemin de fichier, pas besoin de pydub ici
-        # Le pipeline gère la conversion et le resampling en interne
+        # Convertir l'audio en WAV mono 16kHz pour assurer la compatibilité
+        audio = AudioSegment.from_file(audio_path)
+        audio = audio.set_channels(1)
+        audio = audio.set_frame_rate(16000)
+
+        temp_audio_path = UPLOAD_FOLDER / f"temp_diarization_{uuid.uuid4()}.wav"
+        audio.export(temp_audio_path, format="wav")
         
         logging.info(f"Analyse du fichier audio pour détecter les locuteurs...")
         
-        # Exécuter la diarisation
-        diarization = pipeline(audio_path, num_speakers=num_speakers)
+        # Exécuter la diarisation sur le fichier WAV temporaire
+        diarization = pipeline(str(temp_audio_path), num_speakers=num_speakers)
         
         speaker_segments = []
         
         # Itérer sur les résultats (format Annotation de pyannote)
-        # NOTE: La structure de sortie a changé, .itertracks est sur l'objet d'annotation
-        for segment, _, label in diarization.annotation.itertracks(yield_label=True):
+        for segment, _, label in diarization.itertracks(yield_label=True):
             speaker_segments.append({
                 'start': segment.start,
                 'end': segment.end,
                 'speaker': label
             })
         
+        # Nettoyer le fichier temporaire
+        os.remove(temp_audio_path)
+
         logging.info(f"Détection terminée: {len(speaker_segments)} segments de parole trouvés")
         return speaker_segments
         
