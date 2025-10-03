@@ -195,7 +195,8 @@ def detect_speakers(audio_path, num_speakers=None):
         speaker_segments = []
         
         # Itérer sur les résultats (format Annotation de pyannote)
-        for segment, _, label in diarization.itertracks(yield_label=True):
+        # NOTE: La structure de sortie a changé, .itertracks est sur l'objet d'annotation
+        for segment, _, label in diarization.annotation.itertracks(yield_label=True):
             speaker_segments.append({
                 'start': segment.start,
                 'end': segment.end,
