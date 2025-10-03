@@ -160,49 +160,37 @@ def transcribe_segment(args):
         }
 
 def detect_speakers(audio_path, num_speakers=None):
-    """Détection des locuteurs avec pyannote - modèles locaux"""
+    """Détection des locuteurs avec pyannote - officiel"""
     try:
         import torch
-        from pyannote.audio import Model
-        from pyannote.audio.pipelines import SpeakerDiarization
+        from pyannote.audio import Pipeline
         
-        logging.info("Chargement des modèles pyannote locaux...")
+        hf_token = config.get_hf_token()
+        if not hf_token:
+            logging.error("Token Hugging Face non trouvé. La détection des locuteurs est désactivée.")
+            logging.error("Veuillez créer un token sur https://huggingface.co/settings/tokens et l'enregistrer dans ~/.noscribe_web/hf_token.txt")
+            return []
+
+        logging.info("Chargement du pipeline de diarisation pyannote/speaker-diarization-3.1...")
         
-        # Chemins vers vos modèles locaux
-        segmentation_model_path = Path.home() / "noscribe-web/models/pyannote/pyannote_model_segmentation-3.0.bin"
-        embedding_model_path = Path.home() / "noscribe-web/models/pyannote/pyannote_model_wespeaker-voxceleb-resnet34-LM.bin"
-        
-        # Charger les modèles
-        segmentation_model = Model.from_pretrained(str(segmentation_model_path))
-        embedding_model = Model.from_pretrained(str(embedding_model_path))
-        
-        # Créer le pipeline manuellement avec les modèles locaux
-        pipeline = SpeakerDiarization(
-            segmentation=segmentation_model,
-            embedding=embedding_model,
-            clustering="AgglomerativeClustering"
+        # Charger le pipeline officiel depuis Hugging Face
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1",
+            use_auth_token=hf_token
         )
         
-        # Forcer CPU
+        # Forcer CPU si pas de GPU disponible ou pour la cohérence
         pipeline.to(torch.device("cpu"))
         
-        logging.info(f"Préparation de l'audio pour la diarisation...")
+        logging.info("Préparation de l'audio pour la diarisation...")
         
-        # Convertir l'audio en WAV mono 16kHz
-        audio = AudioSegment.from_file(audio_path)
-        audio = audio.set_channels(1)
-        audio = audio.set_frame_rate(16000)
-        
-        temp_audio_path = UPLOAD_FOLDER / f"temp_diarization_{uuid.uuid4()}.wav"
-        audio.export(temp_audio_path, format="wav")
+        # pyannote s'attend à un chemin de fichier, pas besoin de pydub ici
+        # Le pipeline gère la conversion et le resampling en interne
         
         logging.info(f"Analyse du fichier audio pour détecter les locuteurs...")
         
         # Exécuter la diarisation
-        if num_speakers:
-            diarization = pipeline({"audio": str(temp_audio_path)}, num_speakers=num_speakers)
-        else:
-            diarization = pipeline({"audio": str(temp_audio_path)})
+        diarization = pipeline(audio_path, num_speakers=num_speakers)
         
         speaker_segments = []
         
@@ -214,14 +202,13 @@ def detect_speakers(audio_path, num_speakers=None):
                 'speaker': label
             })
         
-        # Nettoyer
-        os.remove(temp_audio_path)
-        
-        logging.info(f"Détection terminée: {len(speaker_segments)} segments trouvés")
+        logging.info(f"Détection terminée: {len(speaker_segments)} segments de parole trouvés")
         return speaker_segments
         
     except Exception as e:
-        logging.error(f"Erreur détection locuteurs: {str(e)}")
+        logging.error(f"Erreur lors de la détection des locuteurs: {str(e)}")
+        if "401" in str(e):
+             logging.error("Erreur d'authentification (401). Votre token Hugging Face est probablement invalide ou a expiré.")
         import traceback
         logging.error(traceback.format_exc())
         return []
