@@ -197,37 +197,49 @@ def transcribe_segment(args):
 
 def detect_speakers(audio_path, num_speakers=None):
     """
-    Détection des locuteurs avec pyannote.audio 4.0
-    Version corrigée avec les bons paramètres pour l'API 4.0
+    Détection des locuteurs avec pyannote.audio
+    Compatible avec les modèles locaux de noScribe et HuggingFace
     """
     try:
         from pyannote.audio import Pipeline
+        import torch
         import time
         
         start_time = time.time()
         logging.info("=== DÉTECTION LOCUTEURS AVEC PYANNOTE.AUDIO ===")
         
-        # Récupérer le token HuggingFace
-        logging.info("Chargement du pipeline depuis HuggingFace...")
-        hf_token = config.get_hf_token()
+        # Chemin vers les modèles locaux (si disponibles)
+        models_folder = Path.home() / '.noscribe_web' / 'models'
+        config_path = models_folder / 'pyannote_config.yaml'
         
-        if not hf_token:
-            logging.error("Token HuggingFace manquant")
-            return []
-        
-        # Charger le pipeline de diarisation
-        try:
-            pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                token=hf_token
-            )
-        except TypeError:
-            pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                use_auth_token=hf_token
-            )
-        
-        logging.info("Pipeline chargé avec succès")
+        # Option 1 : Utiliser les modèles locaux (si vous les avez tous)
+        if config_path.exists():
+            logging.info("Chargement des modèles locaux...")
+            pipeline = Pipeline.from_pretrained(str(config_path))
+        else:
+            # Option 2 : Utiliser les modèles HuggingFace (nécessite token)
+            logging.info("Chargement du pipeline depuis HuggingFace...")
+            hf_token = config.get_hf_token()
+            
+            if not hf_token:
+                logging.error("Token HuggingFace manquant")
+                logging.error("Exécutez: huggingface-cli login")
+                logging.error("Et acceptez les licences sur huggingface.co")
+                return []
+            
+            # Utiliser le pipeline de diarisation v3.1
+            # Note: 'token' au lieu de 'use_auth_token' (API récente)
+            try:
+                pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    token=hf_token
+                )
+            except TypeError:
+                # Fallback pour anciennes versions
+                pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    use_auth_token=hf_token
+                )
         
         # Préparation de l'audio
         logging.info("Préparation de l'audio...")
@@ -242,138 +254,89 @@ def detect_speakers(audio_path, num_speakers=None):
         
         logging.info("Lancement de la diarisation...")
         
-        # ═══════════════════════════════════════════════════════════
-        # PARAMÈTRES POUR PYANNOTE 4.0
-        # Les paramètres se passent LORS DE L'APPEL, pas via instantiate()
-        # ═══════════════════════════════════════════════════════════
-        
+        # Paramètres de diarisation
         diarization_params = {}
         
-        # Nombre de locuteurs
+        # Paramètres optimisés pour réduire la sur-segmentation
+        pipeline.instantiate({
+            'segmentation': {
+                'min_duration_on': 0.8,    # Ignore segments < 0.8s
+                'min_duration_off': 0.8    # Ignore pauses < 0.8s  
+            },
+            'clustering': {
+                'method': 'centroid',
+                'min_cluster_size': 20,    # Clusters plus stables
+                'threshold': 0.75          # Haute similarité requise
+            }
+        })
+        
+        logging.info("Paramètres anti-sur-segmentation appliqués")
         if num_speakers is not None:
             diarization_params['num_speakers'] = num_speakers
             logging.info(f"Nombre de locuteurs fixé: {num_speakers}")
         else:
+            # Laisser pyannote détecter automatiquement (entre 1 et 10)
             diarization_params['min_speakers'] = 1
             diarization_params['max_speakers'] = 10
             logging.info("Détection automatique du nombre de locuteurs")
         
-        # PARAMÈTRES DE QUALITÉ POUR RÉDUIRE LA SUR-SEGMENTATION
-        # Ces paramètres sont passés directement au pipeline dans pyannote 4.0
-        
-        # min_duration_on: durée minimale d'un segment de parole (en secondes)
-        # min_duration_off: durée minimale de silence entre segments (en secondes)
-        # Ces paramètres réduisent la sur-segmentation
-        
-        diarization_params['min_duration_on'] = 0.8   # Ignore segments < 0.8s
-        diarization_params['min_duration_off'] = 0.8  # Ignore pauses < 0.8s
-        
-        logging.info("Paramètres anti-sur-segmentation:")
-        logging.info(f"  - min_duration_on: 0.8s (réduit micro-segments)")
-        logging.info(f"  - min_duration_off: 0.8s (ignore pauses courtes)")
-        
-        # Exécuter la diarisation avec les paramètres
+        # Exécuter la diarisation
         diarization = pipeline(str(temp_audio_path), **diarization_params)
         
         logging.info(f"Diarisation terminée en {time.time() - start_time:.1f}s")
         
         # Convertir le résultat en format utilisable
+        # Compatible avec pyannote.audio 4.0+ (DiarizeOutput)
         speaker_segments = []
         
-        # pyannote 4.0+ : DiarizeOutput wrapper
-        if hasattr(diarization, 'speaker_diarization'):
-            logging.info("Extraction des segments de diarization.speaker_diarization")
-            annotation = diarization.speaker_diarization
-            
-            # Extraire les segments bruts
-            raw_segments = []
-            for turn, _, speaker in annotation.itertracks(yield_label=True):
-                raw_segments.append({
-                    'start': turn.start,
-                    'end': turn.end,
-                    'speaker': speaker
-                })
-            
-            logging.info(f"Segments bruts extraits : {len(raw_segments)}")
-            
-            # ═══════════════════════════════════════════════════════════
-            # POST-TRAITEMENT : FUSION DES SEGMENTS CONTIGUS
-            # Fusionne les segments du même locuteur séparés par < seuil
-            # ═══════════════════════════════════════════════════════════
-            
-            # Trier par temps de début
-            raw_segments.sort(key=lambda x: x['start'])
-            
-            # Seuil de fusion : segments du même locuteur séparés par moins de X secondes
-            MERGE_THRESHOLD = 1.5  # 1.5 secondes (fusion agressive)
-            
-            if raw_segments:
-                current_segment = raw_segments[0].copy()
-                
-                for next_segment in raw_segments[1:]:
-                    # Si même locuteur ET gap < seuil → fusionner
-                    gap = next_segment['start'] - current_segment['end']
-                    
-                    if (current_segment['speaker'] == next_segment['speaker'] and
-                        gap < MERGE_THRESHOLD):
-                        
-                        # Étendre le segment courant
-                        current_segment['end'] = next_segment['end']
-                        logging.debug(f"Fusion: {current_segment['speaker']} "
-                                    f"gap={gap:.2f}s "
-                                    f"[{current_segment['start']:.1f}-{current_segment['end']:.1f}]")
-                    else:
-                        # Sauvegarder le segment courant et commencer un nouveau
-                        speaker_segments.append({
-                            'start': current_segment['start'],
-                            'end': current_segment['end'],
-                            'speaker': f"SPEAKER_{current_segment['speaker']}"
-                        })
-                        current_segment = next_segment.copy()
-                
-                # Ajouter le dernier segment
-                speaker_segments.append({
-                    'start': current_segment['start'],
-                    'end': current_segment['end'],
-                    'speaker': f"SPEAKER_{current_segment['speaker']}"
-                })
-            
-            reduction = len(raw_segments) - len(speaker_segments)
-            logging.info(f"Segments après fusion : {len(speaker_segments)}")
-            logging.info(f"Réduction : {reduction} segments fusionnés ({reduction*100//len(raw_segments) if raw_segments else 0}%)")
+        # Explorer l'objet pour comprendre son API (debug)
+        logging.info(f"Type de diarization: {type(diarization)}")
         
-        elif hasattr(diarization, 'itertracks'):
-            # pyannote 3.x : Annotation directe (fallback)
-            logging.info("Utilisation de diarization.itertracks() (v3.x)")
-            for turn, _, speaker in diarization.itertracks(yield_label=True):
-                speaker_segments.append({
-                    'start': turn.start,
-                    'end': turn.end,
-                    'speaker': f"SPEAKER_{speaker}"
-                })
-        
-        # Nettoyer le fichier temporaire
         try:
-            os.remove(temp_audio_path)
-        except:
-            pass
+            # pyannote 4.0+ : DiarizeOutput wrapper
+            # Les segments sont dans l'attribut speaker_diarization
+            if hasattr(diarization, 'speaker_diarization'):
+                logging.info("Utilisation de diarization.speaker_diarization")
+                annotation = diarization.speaker_diarization
+                
+                # L'annotation a la méthode itertracks()
+                for turn, _, speaker in annotation.itertracks(yield_label=True):
+                    speaker_segments.append({
+                        'start': turn.start,
+                        'end': turn.end,
+                        'speaker': f"SPEAKER_{speaker}"
+                    })
+            
+            # pyannote 3.x : Annotation directe avec itertracks
+            elif hasattr(diarization, 'itertracks'):
+                logging.info("Utilisation de diarization.itertracks() (v3.x)")
+                for turn, _, speaker in diarization.itertracks(yield_label=True):
+                    speaker_segments.append({
+                        'start': turn.start,
+                        'end': turn.end,
+                        'speaker': f"SPEAKER_{speaker}"
+                    })
+            
+            else:
+                logging.error("API pyannote non reconnue")
+                logging.error(f"Attributs disponibles: {[a for a in dir(diarization) if not a.startswith('_')]}")
         
-        # Statistiques finales
+        except Exception as e:
+            logging.error(f"Erreur lors de l'extraction des segments: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
+        # Nettoyer
+        os.remove(temp_audio_path)
+        
+        # Statistiques
         unique_speakers = len(set(seg['speaker'] for seg in speaker_segments))
-        total_duration = sum(seg['end'] - seg['start'] for seg in speaker_segments)
-        avg_duration = total_duration / len(speaker_segments) if speaker_segments else 0
-        
-        logging.info(f"=== RÉSULTAT FINAL ===")
-        logging.info(f"Segments : {len(speaker_segments)}")
-        logging.info(f"Locuteurs uniques : {unique_speakers}")
-        logging.info(f"Durée moyenne/segment : {avg_duration:.1f}s")
-        logging.info(f"Durée totale parole : {total_duration/60:.1f} min / {duration_min:.1f} min audio")
-        logging.info(f"Taux d'activité vocale : {(total_duration/60/duration_min)*100:.1f}%")
+        logging.info(f"=== {len(speaker_segments)} segments / {unique_speakers} locuteurs détectés ===")
         
         return speaker_segments
         
     except ImportError as e:
         logging.error(f"Erreur d'import: {str(e)}")
+        logging.error("Installez: pip install pyannote.audio torch")
         return []
     except Exception as e:
         logging.error(f"Erreur pyannote: {str(e)}")
