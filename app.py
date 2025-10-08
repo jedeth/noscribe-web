@@ -59,10 +59,46 @@ class TranscriptionConfig:
             yaml.dump(self.config, f)
     
     def get_hf_token(self):
-        """Récupère le token HuggingFace"""
+        """
+        Récupère le token HuggingFace depuis plusieurs sources possibles
+        Ordre de priorité :
+        1. Fichier local ~/.noscribe_web/hf_token.txt
+        2. Token de huggingface-cli (~/.cache/huggingface/token)
+        3. Variable d'environnement HF_TOKEN
+        """
+        # Méthode 1 : Fichier local
         if self.hf_token_file.exists():
-            with open(self.hf_token_file, 'r') as f:
-                return f.read().strip()
+            try:
+                with open(self.hf_token_file, 'r') as f:
+                    token = f.read().strip()
+                    if token:
+                        logging.info("Token HuggingFace trouvé (fichier local)")
+                        return token
+            except Exception as e:
+                logging.warning(f"Erreur lecture token local: {e}")
+        
+        # Méthode 2 : Token de huggingface-cli
+        hf_cache_token = Path.home() / '.cache' / 'huggingface' / 'token'
+        if hf_cache_token.exists():
+            try:
+                with open(hf_cache_token, 'r') as f:
+                    token = f.read().strip()
+                    if token:
+                        logging.info("Token HuggingFace trouvé (huggingface-cli)")
+                        return token
+            except Exception as e:
+                logging.warning(f"Erreur lecture token cache: {e}")
+        
+        # Méthode 3 : Variable d'environnement
+        import os
+        token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
+        if token:
+            logging.info("Token HuggingFace trouvé (variable d'environnement)")
+            return token
+        
+        logging.warning("Aucun token HuggingFace trouvé")
+        logging.warning("Exécutez: huggingface-cli login")
+        logging.warning("Ou créez: ~/.noscribe_web/hf_token.txt")
         return None
 
 config = TranscriptionConfig()
@@ -160,64 +196,104 @@ def transcribe_segment(args):
         }
 
 def detect_speakers(audio_path, num_speakers=None):
-    """Détection des locuteurs avec Picovoice Falcon"""
+    """
+    Détection des locuteurs avec pyannote.audio
+    Compatible avec les modèles locaux de noScribe et HuggingFace
+    """
     try:
-        import pvfalcon
+        from pyannote.audio import Pipeline
+        import torch
         import time
         
         start_time = time.time()
-        logging.info("=== DÉTECTION LOCUTEURS AVEC PICOVOICE FALCON ===")
+        logging.info("=== DÉTECTION LOCUTEURS AVEC PYANNOTE.AUDIO ===")
         
-        # Récupérer la clé API
-        api_key_file = CONFIG_FOLDER / 'picovoice_key.txt'
-        if not api_key_file.exists():
-            logging.error("Clé API Picovoice non trouvée")
-            logging.error("Créez le fichier: ~/.noscribe-web/picovoice_key.txt")
-            return []
+        # Chemin vers les modèles locaux (si disponibles)
+        models_folder = Path.home() / '.noscribe_web' / 'models'
+        config_path = models_folder / 'pyannote_config.yaml'
         
-        with open(api_key_file, 'r') as f:
-            access_key = f.read().strip()
+        # Option 1 : Utiliser les modèles locaux (si vous les avez tous)
+        if config_path.exists():
+            logging.info("Chargement des modèles locaux...")
+            pipeline = Pipeline.from_pretrained(str(config_path))
+        else:
+            # Option 2 : Utiliser les modèles HuggingFace (nécessite token)
+            logging.info("Chargement du pipeline depuis HuggingFace...")
+            hf_token = config.get_hf_token()
+            
+            if not hf_token:
+                logging.error("Token HuggingFace manquant")
+                logging.error("Exécutez: huggingface-cli login")
+                logging.error("Et acceptez les licences sur huggingface.co")
+                return []
+            
+            # Utiliser le pipeline de diarisation v3.1
+            # Note: 'token' au lieu de 'use_auth_token' (API récente)
+            try:
+                pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    token=hf_token
+                )
+            except TypeError:
+                # Fallback pour anciennes versions
+                pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    use_auth_token=hf_token
+                )
         
-        # Créer l'instance Falcon
-        falcon = pvfalcon.create(access_key=access_key)
-        
+        # Préparation de l'audio
         logging.info("Préparation de l'audio...")
-        
-        # Convertir en WAV mono 16kHz (requis par Falcon)
         audio = AudioSegment.from_file(audio_path)
         duration_min = len(audio) / 1000 / 60
         logging.info(f"Durée audio: {duration_min:.1f} minutes")
         
+        # Convertir en WAV mono 16kHz (format optimal pour pyannote)
         audio = audio.set_channels(1).set_frame_rate(16000)
-        
-        temp_audio_path = UPLOAD_FOLDER / f"temp_falcon_{uuid.uuid4()}.wav"
+        temp_audio_path = UPLOAD_FOLDER / f"temp_pyannote_{uuid.uuid4()}.wav"
         audio.export(temp_audio_path, format="wav")
         
-        logging.info("Lancement de la diarisation Falcon...")
+        logging.info("Lancement de la diarisation...")
         
-        # Processus de diarisation avec Falcon
-        segments = falcon.process_file(str(temp_audio_path))
+        # Paramètres de diarisation
+        diarization_params = {}
+        if num_speakers is not None:
+            diarization_params['num_speakers'] = num_speakers
+            logging.info(f"Nombre de locuteurs fixé: {num_speakers}")
+        else:
+            # Laisser pyannote détecter automatiquement (entre 1 et 10)
+            diarization_params['min_speakers'] = 1
+            diarization_params['max_speakers'] = 10
+            logging.info("Détection automatique du nombre de locuteurs")
+        
+        # Exécuter la diarisation
+        diarization = pipeline(str(temp_audio_path), **diarization_params)
         
         logging.info(f"Diarisation terminée en {time.time() - start_time:.1f}s")
         
-        # Convertir le format Falcon en notre format
+        # Convertir le résultat en format utilisable
         speaker_segments = []
-        for segment in segments:
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
             speaker_segments.append({
-                'start': segment.start_sec,
-                'end': segment.end_sec,
-                'speaker': f"SPEAKER_{segment.speaker_tag:02d}"
+                'start': turn.start,
+                'end': turn.end,
+                'speaker': f"SPEAKER_{speaker}"
             })
         
         # Nettoyer
-        falcon.delete()
         os.remove(temp_audio_path)
         
-        logging.info(f"=== {len(speaker_segments)} segments détectés ===")
+        # Statistiques
+        unique_speakers = len(set(seg['speaker'] for seg in speaker_segments))
+        logging.info(f"=== {len(speaker_segments)} segments / {unique_speakers} locuteurs détectés ===")
+        
         return speaker_segments
         
+    except ImportError as e:
+        logging.error(f"Erreur d'import: {str(e)}")
+        logging.error("Installez: pip install pyannote.audio torch")
+        return []
     except Exception as e:
-        logging.error(f"Erreur Falcon: {str(e)}")
+        logging.error(f"Erreur pyannote: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
         return []
