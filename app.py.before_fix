@@ -271,45 +271,14 @@ def detect_speakers(audio_path, num_speakers=None):
         logging.info(f"Diarisation terminée en {time.time() - start_time:.1f}s")
         
         # Convertir le résultat en format utilisable
-        # Compatible avec pyannote.audio 4.0+ (DiarizeOutput)
         speaker_segments = []
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
+            speaker_segments.append({
+                'start': turn.start,
+                'end': turn.end,
+                'speaker': f"SPEAKER_{speaker}"
+            })
         
-        # Explorer l'objet pour comprendre son API (debug)
-        logging.info(f"Type de diarization: {type(diarization)}")
-        
-        try:
-            # pyannote 4.0+ : DiarizeOutput wrapper
-            # Les segments sont dans l'attribut speaker_diarization
-            if hasattr(diarization, 'speaker_diarization'):
-                logging.info("Utilisation de diarization.speaker_diarization")
-                annotation = diarization.speaker_diarization
-                
-                # L'annotation a la méthode itertracks()
-                for turn, _, speaker in annotation.itertracks(yield_label=True):
-                    speaker_segments.append({
-                        'start': turn.start,
-                        'end': turn.end,
-                        'speaker': f"SPEAKER_{speaker}"
-                    })
-            
-            # pyannote 3.x : Annotation directe avec itertracks
-            elif hasattr(diarization, 'itertracks'):
-                logging.info("Utilisation de diarization.itertracks() (v3.x)")
-                for turn, _, speaker in diarization.itertracks(yield_label=True):
-                    speaker_segments.append({
-                        'start': turn.start,
-                        'end': turn.end,
-                        'speaker': f"SPEAKER_{speaker}"
-                    })
-            
-            else:
-                logging.error("API pyannote non reconnue")
-                logging.error(f"Attributs disponibles: {[a for a in dir(diarization) if not a.startswith('_')]}")
-        
-        except Exception as e:
-            logging.error(f"Erreur lors de l'extraction des segments: {e}")
-            import traceback
-            logging.error(traceback.format_exc())
         # Nettoyer
         os.remove(temp_audio_path)
         
