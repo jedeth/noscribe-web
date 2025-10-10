@@ -265,12 +265,7 @@ def detect_speakers(audio_path, num_speakers=None):
         # min_duration_off: durée minimale de silence entre segments (en secondes)
         # Ces paramètres réduisent la sur-segmentation
         
-        diarization_params['min_duration_on'] = 0.8   # Ignore segments < 0.8s
-        diarization_params['min_duration_off'] = 0.8  # Ignore pauses < 0.8s
         
-        logging.info("Paramètres anti-sur-segmentation:")
-        logging.info(f"  - min_duration_on: 0.8s (réduit micro-segments)")
-        logging.info(f"  - min_duration_off: 0.8s (ignore pauses courtes)")
         
         # Exécuter la diarisation avec les paramètres
         diarization = pipeline(str(temp_audio_path), **diarization_params)
@@ -305,7 +300,7 @@ def detect_speakers(audio_path, num_speakers=None):
             raw_segments.sort(key=lambda x: x['start'])
             
             # Seuil de fusion : segments du même locuteur séparés par moins de X secondes
-            MERGE_THRESHOLD = 1.5  # 1.5 secondes (fusion agressive)
+            MERGE_THRESHOLD = 2.0  # Fusion agressive
             
             if raw_segments:
                 current_segment = raw_segments[0].copy()

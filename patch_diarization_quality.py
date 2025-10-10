@@ -1,41 +1,39 @@
 #!/usr/bin/env python3
-"""Patch pour améliorer la qualité de la diarisation"""
+"""Supprime les paramètres non supportés et augmente la fusion"""
 
 with open('app.py', 'r') as f:
-    content = f.read()
+    lines = f.readlines()
 
-# Chercher et ajouter les paramètres après la création du pipeline
-search_pattern = """        # Paramètres de diarisation
-        diarization_params = {}"""
+new_lines = []
+skip_next = 0
 
-replacement = """        # Paramètres de diarisation
-        diarization_params = {}
-        
-        # Paramètres optimisés pour réduire la sur-segmentation
-        pipeline.instantiate({
-            'segmentation': {
-                'min_duration_on': 0.8,    # Ignore segments < 0.8s
-                'min_duration_off': 0.8    # Ignore pauses < 0.8s  
-            },
-            'clustering': {
-                'method': 'centroid',
-                'min_cluster_size': 20,    # Clusters plus stables
-                'threshold': 0.75          # Haute similarité requise
-            }
-        })
-        
-        logging.info("Paramètres anti-sur-segmentation appliqués")"""
-
-if search_pattern in content:
-    content = content.replace(search_pattern, replacement, 1)
-    print("✓ Paramètres de pipeline ajoutés")
-else:
-    print("⚠ Pattern non trouvé, modification manuelle requise")
-
-# Augmenter le seuil de fusion
-content = content.replace('MERGE_THRESHOLD = 1.0', 'MERGE_THRESHOLD = 1.5')
+for i, line in enumerate(lines):
+    if skip_next > 0:
+        skip_next -= 1
+        continue
+    
+    # Supprimer les lignes min_duration_on/off
+    if "diarization_params['min_duration_on']" in line:
+        skip_next = 1  # Sauter aussi la ligne suivante
+        continue
+    
+    if "min_duration_on: 0.8s" in line or "min_duration_off: 0.8s" in line:
+        continue
+    
+    if 'logging.info("Paramètres anti-sur-segmentation:")' in line:
+        skip_next = 2
+        continue
+    
+    # Changer le seuil de fusion
+    if 'MERGE_THRESHOLD = 1.5' in line:
+        new_lines.append('            MERGE_THRESHOLD = 2.0  # Fusion agressive\n')
+        continue
+    
+    new_lines.append(line)
 
 with open('app.py', 'w') as f:
-    f.write(content)
+    f.writelines(new_lines)
 
-print("✓ Patch appliqué - Redémarrez app.py")
+print("✓ Paramètres non supportés supprimés")
+print("✓ MERGE_THRESHOLD augmenté à 2.0s")
+print("  Redémarrez: python app.py")
